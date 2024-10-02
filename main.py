@@ -1,3 +1,8 @@
+"""
+    Meda - A Python Command Line Text Editor
+    @author: Luna
+"""
+
 import curses
 import traceback
 import sys
@@ -16,9 +21,57 @@ class FileEditor:
         self.running = False
         self.file_object = None
         self.current_file = file
+        self.can_move_x, self.can_move_y = True, True
+        self.rows, self.columns = 0, 0
+        self.file_x, self.file_y = 0, 0
+        self.cursor_x, self.cursor_y = 0, 1
+        self.focus = "File"
 
-    def handle_input(self):
-        ...
+    def init_color(self) -> None:
+        """
+            Initiates color pairs for syntax highlighting
+            Assumes you have a colored terminal
+        """
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+        curses.init_pair(6, curses.COLOR_RED, curses.COLOR_BLACK)
+        curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+    def draw_box(self, title : str=None, writable : bool=False):
+        for i in range(self.rows//3, self.rows//3+11):
+            line = ""
+            if i == self.rows//3:
+                line += " "
+                for _ in range(self.columns//2-2):
+                    line += "_"
+                line += " "
+            elif i == self.rows//3+10:
+                line += "|"
+                for _ in range(self.columns//2-2):
+                    line += "_"
+                line += "|"
+            else:
+                line += "|"
+                for _ in range(self.columns//2-2):
+                    line += " "
+                line += "|"
+            self.scr.addstr(i, (self.columns//2//2), line)
+
+    def handle_override(self, inp) -> None:
+        if inp == Inputs.CTRL_O: # Open File
+            self.draw_box()
+        if inp == Inputs.CTRL_X: # Close App
+            ...
+
+    def handle_input(self) -> None:
+        self.rows, self.columns = self.scr.getmaxyx()
+        inp = self.scr.getch()
+        if inp in Inputs.OVERRIDES:
+            self.handle_override(inp)
 
     def run(self) -> None:
         """
@@ -29,6 +82,7 @@ class FileEditor:
             self.running = True
             curses.noecho()
             curses.cbreak()
+            self.init_color()
             self.scr.keypad(True) # Clears window
             while self.running:
                 self.handle_input()
