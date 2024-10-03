@@ -21,6 +21,7 @@ class FileEditor:
         self.running = False
         self.file_object = None
         self.current_file = file
+        self.content = [""]
         self.can_move_x, self.can_move_y = True, True
         self.rows, self.columns = 0, 0
         self.file_x, self.file_y = 0, 0
@@ -41,7 +42,24 @@ class FileEditor:
         curses.init_pair(6, curses.COLOR_RED, curses.COLOR_BLACK)
         curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
 
-    def draw_box(self, title : str=None, writable : bool=False):
+    def move_cursor(self, x: int=None, y: int=None) -> None:
+        """
+            Moves cursor to x and y position
+            If no positions given, it moves to where it should currently be
+            Useful for after you write a line, since curses will move cursor
+        """
+        x = self.cursor_x if not x else x
+        y = self.cursor_y if not y else y
+        self.scr.move(y, x)
+        curses.setsyx(y, x)
+        self.scr.refresh()
+
+    def draw_box(self, title : str=None, writable : bool=False) -> None:
+        """
+            Draws a box on the screen in the middle
+            Used for user inputs or confirmations
+            TODO: Make it a standalone class?
+        """
         for i in range(self.rows//3, self.rows//3+11):
             line = ""
             if i == self.rows//3:
@@ -62,6 +80,10 @@ class FileEditor:
             self.scr.addstr(i, (self.columns//2//2), line)
 
     def handle_override(self, inp) -> None:
+        """
+            Overrides are things that can be executed at any time
+            This is for things like saving or quitting
+        """
         if inp == Inputs.CTRL_O: # Open File
             self.draw_box()
         if inp == Inputs.CTRL_X: # Close App
@@ -72,6 +94,51 @@ class FileEditor:
         inp = self.scr.getch()
         if inp in Inputs.OVERRIDES:
             self.handle_override(inp)
+
+    def clear_screen(self) -> None:
+        """
+            Clear everything on the screen, excluding header/footer
+        """
+        for line in range(1, self.rows-1):
+            self.scr.addstr(0, line, " "*self.columns)
+        self.move_cursor() # Reset cursor
+
+    def write_line(self, y : int, content : str, index : int=0, parse : bool=False) -> None:
+        """
+            Writes a line of content, from index on, at the line y
+            Takes an optional parsed argument
+        """
+        try:
+            line = content[index:index+self.columns-2]
+        except:
+            line = content[index:]
+        line += " "*(self.rows-len(line))
+        if parse:
+            parsed = self.parse_line(line)
+            for i in range(len(line)):
+                self.scr.addch(y, i, line[i], parsed[i])
+        else:
+            self.scr.addstr(y, 0, line)
+
+    def write_content(self, line: int=0, index: int=0) -> None:
+        """
+            Writes all the content in self.content from line to end of screen
+            Optional index in case of horizontal scrolling
+        """
+        self.clear_screen()
+        for y, text in enumerate(self.content[line:]):
+            self.write_line(y+1, text, index)
+            if y+2 >= self.rows:
+                break
+        self.move_cursor()
+
+    def read_file(self, file : str) -> None:
+        """
+            Sets attributes to equal a new file, as indicated by a passed string
+        """
+        self.file_object = open(file)
+        self.content = self.file_object.read().split("\n")
+        self.write_content()
 
     def run(self) -> None:
         """
@@ -84,6 +151,9 @@ class FileEditor:
             curses.cbreak()
             self.init_color()
             self.scr.keypad(True) # Clears window
+            if self.current_file: # Arg passed at creation
+                self.rows, self.columns = self.scr.getmaxyx()
+                self.read_file(self.current_file)
             while self.running:
                 self.handle_input()
         except KeyboardInterrupt: # Control+C
