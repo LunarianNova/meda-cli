@@ -22,6 +22,7 @@ class FileEditor:
         self.file_object = None
         self.current_file = file
         self.content = [""]
+        self.original_content = [""]
         self.can_move_x, self.can_move_y = True, True
         self.rows, self.columns = 0, 0
         self.file_x, self.file_y = 0, 0
@@ -41,6 +42,19 @@ class FileEditor:
         curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
         curses.init_pair(6, curses.COLOR_RED, curses.COLOR_BLACK)
         curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+    def write_header(self) -> None:
+        """
+            Stickied header containing the filename for now
+        """
+        file = self.current_file + "*" if self.content != self.original_content else self.current_file
+        half_length = (self.columns-len(file))//2
+        header = " "*half_length + file + " "*half_length
+        self.scr.addstr(0, 0, header, curses.color_pair(1))
+        self.move_cursor()
+
+    def write_footer() -> None:
+        ...
 
     def move_cursor(self, x: int=None, y: int=None) -> None:
         """
@@ -138,6 +152,7 @@ class FileEditor:
         """
         self.file_object = open(file)
         self.content = self.file_object.read().split("\n")
+        self.original_content = self.content
         self.write_content()
 
     def run(self) -> None:
@@ -147,14 +162,15 @@ class FileEditor:
         """
         try:
             self.running = True
+            self.rows, self.columns = self.scr.getmaxyx()
             curses.noecho()
             curses.cbreak()
             self.init_color()
             self.scr.keypad(True) # Clears window
             if self.current_file: # Arg passed at creation
-                self.rows, self.columns = self.scr.getmaxyx()
                 self.read_file(self.current_file)
             while self.running:
+                self.write_header()
                 self.handle_input()
         except KeyboardInterrupt: # Control+C
             self.close()
