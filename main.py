@@ -23,6 +23,7 @@ class FileEditor:
         self.current_file = file
         self.content = [""]
         self.original_content = [""]
+        self.parsed_content = {}
         self.can_move_x, self.can_move_y = True, True
         self.rows, self.columns = 0, 0
         self.file_x, self.file_y = 0, 0
@@ -93,6 +94,30 @@ class FileEditor:
                 line += "|"
             self.scr.addstr(i, (self.columns//2//2), line)
 
+    def handle_movement(self, direction : int) -> None:
+        """
+            given an ascii int, will process movement
+        """
+        match direction:
+            case 258: # Arrow Down
+                if self.file_y+1 < len(self.content): # If there is more content
+                    if self.cursor_y+2 < self.rows: # If your cursor is not at the bottom
+                        self.cursor_y += 1
+                        self.file_y += 1
+                    else: # Bottom of screen
+                        # Current line - rows = 2 indexes lower than bottom of screen
+                        # Current line - rows + 4 is the second line on screen
+                        self.write_content(line=self.file_y-self.rows+4)
+                        self.file_y += 1 # Navigate through file, but not screen
+            case 259: # Arrow up
+                if self.file_y - 1 >= 0: # Has content
+                    if self.cursor_y != 1: # If its in middle of screen
+                        self.cursor_y -= 1
+                        self.file_y -= 1
+                    else: # Top
+                        self.write_content(line=self.file_y-1)
+                        self.file_y -= 1
+
     def handle_override(self, inp) -> None:
         """
             Overrides are things that can be executed at any time
@@ -108,6 +133,8 @@ class FileEditor:
         inp = self.scr.getch()
         if inp in Inputs.OVERRIDES:
             self.handle_override(inp)
+        else:
+            self.handle_movement(inp)
 
     def clear_screen(self) -> None:
         """
@@ -117,20 +144,103 @@ class FileEditor:
             self.scr.addstr(0, line, " "*self.columns)
         self.move_cursor() # Reset cursor
 
-    def write_line(self, y : int, content : str, index : int=0, parse : bool=False) -> None:
+    def parse_line(self, line : str) -> list:
+        """
+            Just don't read this
+            Please
+            Basically returns a list where each character in line is assigned a color
+            Based on what it is, definition, declarative, comment, etc
+            TODO: Multiline (Would only work in a separate function)
+        """
+        try:
+            if self.content.index(line):
+                if len(self.parsed_content[self.content.index(line)]) == len(line):
+                    return self.parsed_content[self.content.index(line)]
+                else:
+                    raise AttributeError
+        except:
+            parsed = []
+            declaratives = "(class|import|def|if|else|elif|while|for|try|except|or|and|match|case|return|is|in|not|with|as|assert|pass|break|continue)"
+            # Non alplhanumeric
+
+            # Numeric
+            for char in line:
+                if char.isalnum():
+                    # Numeric
+                    if ord(char) >= 48 and ord(char) <= 57:
+                        parsed.append(curses.color_pair(5))
+                    # Alpha
+                    else:
+                        parsed.append(curses.color_pair(0))
+                # Everything not alphanumeric
+                else:
+                    parsed.append(curses.color_pair(2))
+            
+            # Declaratives
+            for declarative in re.finditer(f"(\\(|^|\\s){declaratives}(:|\\s)", line):
+                for i in range(declarative.start(), declarative.end()):
+                    parsed[i] = curses.color_pair(2)
+            for word in ["def", "class", "import"]:
+                check = re.search(f"{word}\\s\\S*(\\(|:)", line)
+                if check:
+                    for i in range(check.start()+len(word), check.end()-1):
+                        parsed[i] = curses.color_pair(7)
+
+            # Dot Notation
+            for module in re.finditer("[^a-zA-Z]{1}[a-zA-Z]*\\.", line):
+                for i in range(module.start()+1, module.end()):
+                    parsed[i] = curses.color_pair(3)
+
+            # Comments
+            comment = re.search("#.*", line)
+            if comment:
+                for i in range(comment.start(), len(line)):
+                    parsed[i] = curses.color_pair(4)
+            # Quotes
+            for quote in re.finditer('"[^"]*"', line):
+                for i in range(quote.start(), quote.end()):
+                    parsed[i] = curses.color_pair(4)
+            for quote in re.finditer("'[^']*'", line):
+                for i in range(quote.start(), quote.end()):
+                    parsed[i] = curses.color_pair(4)
+
+            # Definition
+            definition = re.search("^\\s*\\S*\\s*=", line)
+            if definition:
+                for i in range(definition.start(), definition.end()-1):
+                    parsed[i] = curses.color_pair(5)
+            definition = re.search("^\\s*\\S*\\s*(\\*=|\\+=|-=)", line)
+            if definition:
+                for i in range(definition.start(), definition.end()-2):
+                    parsed[i] = curses.color_pair(5)
+
+            # A few random leftovers
+            for match in re.finditer("(self|None|True|False)", line):
+                for i in range(match.start(), match.end()):
+                    parsed[i] = curses.color_pair(6)
+            return parsed
+
+    def write_line(self, y : int, content : str, index : int=0, parse : bool|dict=False) -> None:
         """
             Writes a line of content, from index on, at the line y
-            Takes an optional parsed argument
+            Takes an optional parse argument
+            Either true to parse text, False to not, or the Parsed text itself
         """
         try:
             line = content[index:index+self.columns-2]
         except:
             line = content[index:]
         line += " "*(self.rows-len(line))
-        if parse:
+        if parse is True:
             parsed = self.parse_line(line)
             for i in range(len(line)):
                 self.scr.addch(y, i, line[i], parsed[i])
+        elif parse:
+            for i in range(len(line)):
+                if i < len(parse):
+                    self.scr.addch(y, i, line[i], parse[i])
+                else:
+                    self.scr.addch(y, i, line[i])
         else:
             self.scr.addstr(y, 0, line)
 
@@ -141,7 +251,9 @@ class FileEditor:
         """
         self.clear_screen()
         for y, text in enumerate(self.content[line:]):
-            self.write_line(y+1, text, index)
+            parsed = self.parse_line(text)
+            self.parsed_content[y] = parsed # y = file line, not screen line
+            self.write_line(y+1, text, index, parse=True) # y+1 to account for header
             if y+2 >= self.rows:
                 break
         self.move_cursor()
@@ -175,7 +287,7 @@ class FileEditor:
         except KeyboardInterrupt: # Control+C
             self.close()
         except Exception: # Genuine Error
-            self.close()
+            self.close() # Gracefully close
             print(traceback.format_exc()) # Print the stack trace
 
     def close(self) -> None:
