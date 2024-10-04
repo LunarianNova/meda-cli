@@ -26,6 +26,7 @@ class BaseBox:
         self.title = title
         self.y, self.x, = 0, 0
         self.content = []
+        self.parsed_content = {}
         self.active_screen = None
         self._instantiate_box()
 
@@ -51,7 +52,7 @@ class BaseBox:
             self.content.append("|" + " "*(self.width-2) + "|")
         self.content.append("|" + "_"*(self.width-2) + "|")
 
-    def draw(self, y: int=None, x: int=None, scr=None) -> None:
+    def draw(self, scr=None, y: int=None, x: int=None) -> None:
         """
             Draws the box on scr at y, x
         """
@@ -61,7 +62,12 @@ class BaseBox:
         self.active_screen = scr
         
         for i, line in enumerate(self.content):
-            scr.addstr(y+i, x, line)
+            try:
+                parsed = self.parsed_content[i]
+                for index, char in enumerate(line):
+                    scr.addch(self.y+i, self.x+index, char, parsed[index])
+            except:
+                scr.addstr(self.y+i, self.x, line)
             
     def move_cursor(self, y: int, x: int, scr=None) -> None:
         """
@@ -81,17 +87,19 @@ class SelectBox(BaseBox):
         self.options = options
         self.active_option = 0
 
-    def draw(self, y: int=None, x: int=None, scr=None) -> None:
+    def draw(self, scr=None, y: int=None, x: int=None) -> None:
         """
             Draws the SelectBox on given screen, or last used screen
         """
         scr = scr or self.active_screen
+        cur_y, cur_x = scr.getyx()
         self.x = x if x is not None else self.x
         self.y = y if y is not None else self.y
         self.active_screen = scr
 
         self._draw_options()
-        super().draw(scr, y, x)
+        super().draw(scr=scr, y=y, x=x)
+        super().move_cursor(cur_y, cur_x)
 
     def _draw_options(self) -> None:
         """
@@ -100,16 +108,33 @@ class SelectBox(BaseBox):
         """
         spacing = (self.width-2) // (len(self.options)+1)
         line = "|"
+        parsed = []
 
-        for i, option in enumerate(self.options):
-            if i == self.active_option:
-                line += curses.color_pair(1) + option + curses.color_pair(0) # You can do coloring like this? I have to rewrite how I parse stuff if true
-            else:
-                line += option
+        for option in self.options:
             line += " "*(spacing-len(option))
+            line += option
 
+        line += " "*(spacing-len(option)+2)
         line += "|"
+
+        for _ in line: # Default Colors
+            parsed.append(curses.color_pair(0))
+
+        res = re.search(self.options[self.active_option], line)
+        for i in range(res.start(), res.end()): # Active Option
+            parsed[i] = curses.color_pair(1)
+
+        self.parsed_content[(self.height//3)*2] = parsed
         self.content[(self.height//3)*2] = line
+
+    def handle_input(self, inp):
+        match inp:
+            case 260: # Left
+                self.active_option = self.active_option-1 if self.active_option-1 >= 0 else self.active_option
+            case 261: # Right
+                self.active_option = self.active_option+1 if self.active_option+1 < len(self.options) else self.active_option
+        self._draw_options()
+        self.draw()
 
 
 
@@ -246,10 +271,10 @@ class FileEditor:
                 # box.draw(self.scr, self.rows//3, self.columns//2//2)
                 self.move_cursor()
             case Inputs.CTRL_X: # Close App
-                box = SaveBox()
+                box = SaveBox(height=10, width=self.columns//2)
                 self.focus_object = box
                 self.focus = "SaveBox"
-                box.draw()
+                box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
             case Inputs.CTRL_A:
                 if self.focus != "File":
                     self.focus_object = self
@@ -261,8 +286,8 @@ class FileEditor:
         inp = self.scr.getch()
         if inp in Inputs.OVERRIDES:
             self.handle_override(inp)
-        elif type(self.focus) != str:
-            self.focus.handle_input(inp)
+        elif type(self.focus_object) != type(self):
+            self.focus_object.handle_input(inp)
         else:
             res = self.handle_movement(inp)
             if self.focus == "SaveBox":
