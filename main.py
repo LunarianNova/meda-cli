@@ -383,7 +383,7 @@ class FileEditor:
         if parse is True:
             parsed = self.parse_line(line) if not self.check_parsed_cache(content) else self.check_parsed_cache(content)
             for i in range(len(line)):
-                self.scr.addch(y, i, line[i], parsed[i])
+                self.scr.addch(y, i, line[i], parsed[i]) if i < len(parsed) else self.scr.addch(y, i, line[i], curses.color_pair(0))
         elif parse:
             for i in range(len(line)):
                 if i < len(parse):
