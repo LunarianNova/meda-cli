@@ -307,14 +307,59 @@ class FileEditor:
             self.scr.addstr(line, 0, " "*self.columns)
         self.move_cursor() # Reset cursor
 
-    def parse_line(self, line : str) -> list:
+    def parse_line(self, line: str) -> list:
         """
-            Just don't read this
-            Please
-            Basically returns a list where each character in line is assigned a color
-            Based on what it is, definition, declarative, comment, etc
-            TODO: Multiline (Would only work in a separate function)
+            Basically, this returns a list where each character in line is assigned a color 
+            based on what it is (definition, declarative, comment, etc.)
+            TODO: Multiline support (Needs a separate function)
         """
+        parsed = []
+        declaratives = r"(class|import|def|if|else|elif|while|for|try|except|or|and|match|case|return|is|in|not|with|as|assert|pass|break|continue)"
+        
+        # Default colors for alpha, numeric and non-alphanumeric
+        for char in line:
+            if char.isalnum():
+                color = curses.color_pair(5) if char.isdigit() else curses.color_pair(0)
+            else:
+                color = curses.color_pair(2)
+            parsed.append(color)
+
+        # Declaratives
+        for match in re.finditer(f"(\\(|^|\\s){declaratives}(:|\\s)", line):
+            for i in range(match.start(), match.end()):
+                parsed[i] = curses.color_pair(2)
+
+        # Function/Class/Module names
+        for word in ["def", "class", "import"]:
+            if match := re.search(f"{word}\\s\\S*(\\(|:)", line): # Walrus operator my beloved
+                for i in range(match.start() + len(word), match.end() - 1):
+                    parsed[i] = curses.color_pair(7)
+
+        # Dot notation
+        for match in re.finditer(r"[^a-zA-Z]{1}[a-zA-Z]*\.", line):
+            for i in range(match.start() + 1, match.end()):
+                parsed[i] = curses.color_pair(3)
+
+        # Comments and Quotes
+        for case in [r"#.*", r'"[^"]*"', r"'[^']*'"]:
+            for match in re.finditer(case, line):
+                for i in range(match.start(), match.end()):
+                    parsed[i] = curses.color_pair(4)
+
+        # Definitions
+        for case in [r"^\s*\S*\s*=", r"^\s*\S*\s*(\*=|\+=|-=)"]:
+            if match := re.search(case, line):
+                for i in range(match.start(), match.end() - 1):
+                    parsed[i] = curses.color_pair(5)
+
+        # Random Misc
+        for match in re.finditer(r"(self|None|True|False)", line):
+            for i in range(match.start(), match.end()):
+                parsed[i] = curses.color_pair(6)
+
+        return parsed
+
+    def check_parsed_cache(self, line: str) -> list:
         try:
             if self.content.index(line):
                 if len(self.parsed_content[self.content.index(line)]) == len(line):
@@ -322,66 +367,7 @@ class FileEditor:
                 else:
                     raise AttributeError
         except:
-            parsed = []
-            declaratives = "(class|import|def|if|else|elif|while|for|try|except|or|and|match|case|return|is|in|not|with|as|assert|pass|break|continue)"
-            # Non alplhanumeric
-
-            # Numeric
-            for char in line:
-                if char.isalnum():
-                    # Numeric
-                    if ord(char) >= 48 and ord(char) <= 57:
-                        parsed.append(curses.color_pair(5))
-                    # Alpha
-                    else:
-                        parsed.append(curses.color_pair(0))
-                # Everything not alphanumeric
-                else:
-                    parsed.append(curses.color_pair(2))
-            
-            # Declaratives
-            for declarative in re.finditer(f"(\\(|^|\\s){declaratives}(:|\\s)", line):
-                for i in range(declarative.start(), declarative.end()):
-                    parsed[i] = curses.color_pair(2)
-            for word in ["def", "class", "import"]:
-                check = re.search(f"{word}\\s\\S*(\\(|:)", line)
-                if check:
-                    for i in range(check.start()+len(word), check.end()-1):
-                        parsed[i] = curses.color_pair(7)
-
-            # Dot Notation
-            for module in re.finditer("[^a-zA-Z]{1}[a-zA-Z]*\\.", line):
-                for i in range(module.start()+1, module.end()):
-                    parsed[i] = curses.color_pair(3)
-
-            # Comments
-            comment = re.search("#.*", line)
-            if comment:
-                for i in range(comment.start(), len(line)):
-                    parsed[i] = curses.color_pair(4)
-            # Quotes
-            for quote in re.finditer('"[^"]*"', line):
-                for i in range(quote.start(), quote.end()):
-                    parsed[i] = curses.color_pair(4)
-            for quote in re.finditer("'[^']*'", line):
-                for i in range(quote.start(), quote.end()):
-                    parsed[i] = curses.color_pair(4)
-
-            # Definition
-            definition = re.search("^\\s*\\S*\\s*=", line)
-            if definition:
-                for i in range(definition.start(), definition.end()-1):
-                    parsed[i] = curses.color_pair(5)
-            definition = re.search("^\\s*\\S*\\s*(\\*=|\\+=|-=)", line)
-            if definition:
-                for i in range(definition.start(), definition.end()-2):
-                    parsed[i] = curses.color_pair(5)
-
-            # A few random leftovers
-            for match in re.finditer("(self|None|True|False)", line):
-                for i in range(match.start(), match.end()):
-                    parsed[i] = curses.color_pair(6)
-            return parsed
+            return False
 
     def write_line(self, y : int, content : str, index : int=0, parse : bool|dict=False) -> None:
         """
@@ -395,7 +381,7 @@ class FileEditor:
             line = content[index:]
         line += " "*(self.columns-len(line)-1)
         if parse is True:
-            parsed = self.parse_line(line)
+            parsed = self.parse_line(line) if not self.check_parsed_cache(content) else self.check_parsed_cache(content)
             for i in range(len(line)):
                 self.scr.addch(y, i, line[i], parsed[i])
         elif parse:
