@@ -31,7 +31,7 @@ class Box:
         self.reset_x, self.reset_y = 0, 0
         self.instantiate_box()
     
-    def instantiate_box(self):
+    def instantiate_box(self) -> None:
         for row in range(self.height):
             if row == 0:
                 self.content.append(" "+"_"*(self.width-2)+" ")
@@ -42,15 +42,15 @@ class Box:
         self.set_title()
         self.set_options()
 
-    def handle_input(self, inp):
+    def handle_input(self, inp) -> str:
         if inp == 260 or inp == 261:
             self.handle_movement(inp)
+            return ""
         else:
             if inp == 10:
-                # Return
-                ...
+                return self.options[self.active_option]
 
-    def handle_movement(self, direction):
+    def handle_movement(self, direction) -> None:
         match direction:
             case 260: # Left
                 self.active_option -= 1 if self.active_option-1>=0 else 0
@@ -58,7 +58,7 @@ class Box:
                 self.active_option += 1 if self.active_option+1<len(self.options) else 0
         self.draw()
 
-    def parse_options(self):
+    def parse_options(self) -> None:
         line = self.content[(self.height//3)*2]
         parsed = []
         for _ in line:
@@ -68,7 +68,7 @@ class Box:
         self.parsed_content[(self.height//3)*2] = parsed
 
 
-    def set_options(self):
+    def set_options(self) -> None:
         if self.options:
             line = self.content[(self.height//3)*2]
             num = len(self.options)
@@ -87,7 +87,7 @@ class Box:
             self.content[(self.height//3)*2] = line
 
 
-    def set_title(self):
+    def set_title(self) -> None:
         if len(self.title) < self.width-2:
             line = self.content[self.height//3]
             for character in range(len(self.title)):
@@ -100,7 +100,7 @@ class Box:
                     line = line[0:mid+character+1] + self.title[character] + line[mid+character+2:]
         self.content[self.height//3] = line
 
-    def draw(self, scr=None, y: int=None, x: int=None):
+    def draw(self, scr=None, y: int=None, x: int=None) -> None:
         if not scr and self.active_screen:
             scr = self.active_screen
         if not y:
@@ -126,7 +126,7 @@ class Box:
             y += 1
         self.reset_cursor()
             
-    def reset_cursor(self, scr=None):
+    def reset_cursor(self, scr=None) -> None:
         if scr == None:
             scr = self.active_screen
         scr.move(self.reset_y, self.reset_x)
@@ -147,6 +147,7 @@ class FileEditor:
         self.file_x, self.file_y = 0, 0
         self.cursor_x, self.cursor_y = 0, 1
         self.max_x = 0
+        self.focus_object = self
         self.focus = "File"
 
     def init_color(self) -> None:
@@ -273,11 +274,13 @@ class FileEditor:
                 self.draw_box()
             case Inputs.CTRL_X: # Close App
                 box = Box(10, self.columns//2, title="Would you like to save?", centered=True, options=["YES", "NO"])
-                self.focus = box
+                self.focus_object = box
+                self.focus = "SaveBox"
                 box.draw(self.scr, self.rows//3, self.columns//2//2)
                 self.move_cursor()
             case Inputs.CTRL_A:
                 if self.focus != "File":
+                    self.focus_object = self
                     self.focus = "File"
                     self.write_content(self.file_y, self.file_x)
 
@@ -289,7 +292,12 @@ class FileEditor:
         elif type(self.focus) != str:
             self.focus.handle_input(inp)
         else:
-            self.handle_movement(inp)
+            res = self.handle_movement(inp)
+            if self.focus == "SaveBox":
+                if res == "Yes":
+                    self.save_file()
+                elif res == "No":
+                    self.close()
 
     def clear_screen(self) -> None:
         """
@@ -422,6 +430,11 @@ class FileEditor:
         self.clear_screen()
         self.write_header()
         self.write_content()
+
+    def save_file(self) -> None:
+        self.file_object.close()
+        with open(self.current_file, "w") as f:
+            f.write("\n".join(self.content))            
 
     def run(self) -> None:
         """
