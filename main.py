@@ -389,6 +389,8 @@ class FileEditor:
         self.file_object = open(file)
         self.content = self.file_object.read().split("\n")
         self.original_content = self.content
+        for line in range(len(self.content)):
+            self.parsed_content[line] = self.parse_line(self.content[line])
         self.clear_screen()
         self.write_header()
         self.write_content()
