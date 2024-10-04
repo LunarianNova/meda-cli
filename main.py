@@ -128,6 +128,9 @@ class SelectBox(BaseBox):
         self.content[(self.height//3)*2] = line
 
     def handle_input(self, inp) -> int:
+        """
+            Handles changing the active option as well as returning on enter
+        """
         match inp:
             case 260: # Left
                 self.active_option = self.active_option-1 if self.active_option-1 >= 0 else self.active_option
@@ -147,6 +150,10 @@ class SaveBox(SelectBox):
         super().__init__(height, width, title, options)
 
     def handle_input(self, inp) -> int:
+        """
+            If the returned option is 0, return True (Save)
+            Else return False (Don't save)
+        """
         if res := super().handle_input(inp) is not None:
             if res == 0:
                 return True
