@@ -332,12 +332,12 @@ class FileEditor:
         # Function/Class/Module names
         for word in ["def", "class", "import"]:
             if match := re.search(f"{word}\\s\\S*(\\(|:)", line): # Walrus operator my beloved
-                for i in range(match.start() + len(word), match.end() - 1):
+                for i in range(match.start()+len(word), match.end() - 1):
                     parsed[i] = curses.color_pair(7)
 
         # Dot notation
         for match in re.finditer(r"[^a-zA-Z]{1}[a-zA-Z]*\.", line):
-            for i in range(match.start() + 1, match.end()):
+            for i in range(match.start()+1, match.end()):
                 parsed[i] = curses.color_pair(3)
 
         # Comments and Quotes
@@ -360,38 +360,40 @@ class FileEditor:
         return parsed
 
     def check_parsed_cache(self, line: str) -> list:
+        """
+            Checks self.parsed_content to see if a line is in it
+            Can't directly check, because of how parsing is handled
+            So it checks content first, and matches the content line to parsed line
+        """
         try:
-            if self.content.index(line):
-                if len(self.parsed_content[self.content.index(line)]) == len(line):
-                    return self.parsed_content[self.content.index(line)]
-                else:
-                    raise AttributeError
-        except:
-            return False
+            line_index = self.content.index(line)
+            if len(self.parsed_content[line_index]) == len(line): # Can't compare directly, so compare size
+                return self.parsed_content[line_index]
+            return None # Not parsed
+        
+        except ValueError: # Failed .index
+            return None
 
-    def write_line(self, y : int, content : str, index : int=0, parse : bool|dict=False) -> None:
+    def write_line(self, y: int, content: str, index: int = 0, parse: bool | dict = False) -> None:
         """
             Writes a line of content, from index on, at the line y
             Takes an optional parse argument
-            Either true to parse text, False to not, or the Parsed text itself
+            True to parse, False to not, or a parsed dict itself
         """
-        try:
-            line = content[index:index+self.columns-2]
-        except:
-            line = content[index:]
-        line += " "*(self.columns-len(line)-1)
+        line = content[index:index+self.columns-2] if index < len(content) else content[index:]
+        line += " "*(self.columns-len(line)-1) # Erase any text already there
+    
         if parse is True:
             parsed = self.parse_line(line) if not self.check_parsed_cache(content) else self.check_parsed_cache(content)
-            for i in range(len(line)):
-                self.scr.addch(y, i, line[i], parsed[i]) if i < len(parsed) else self.scr.addch(y, i, line[i], curses.color_pair(0))
         elif parse:
-            for i in range(len(line)):
-                if i < len(parse):
-                    self.scr.addch(y, i, line[i], parse[i])
-                else:
-                    self.scr.addch(y, i, line[i])
+            parsed = parse
         else:
-            self.scr.addstr(y, 0, line)
+            self.scr.addstr(y, 0, line) # TODO: Test if this is faster than adding each character
+            return
+
+        for i in range(len(line)):
+            color = parsed[i] if i < len(parsed) else curses.color_pair(0)
+            self.scr.addch(y, i, line[i], color)
 
     def write_content(self, line: int=0, index: int=0) -> None:
         """
