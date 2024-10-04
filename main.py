@@ -15,6 +15,65 @@ class Inputs:
     CTRL_X = 24
     OVERRIDES = [CTRL_I, CTRL_O, CTRL_A, CTRL_X]
 
+class Box:
+    def __init__(self, height: int, width: int, title: str, centered: bool=False, writable: bool=False, options: list=None):
+        self.height = height
+        self.width = width
+        self.title = title
+        self.centered = centered
+        self.options = options
+        self.content = []
+        for row in range(self.height):
+            if row == 0:
+                self.content.append(" "+"_"*(self.width-2)+" ")
+            elif row == self.height-1:
+                self.content.append("|"+"_"*(self.width-2)+"|")
+            else:
+                self.content.append("|"+" "*(self.width-2)+"|")
+
+    def handle_movement(self):
+        ...
+
+    def set_options(self):
+        if self.options:
+            line = self.content[(self.height//3)*2]
+            num = len(self.options)
+            mid = (self.width - 2) // (num+1)
+            for item in range(num):
+                new_mid = mid*(item+1)
+                half = (len(self.options[item])//2)-1
+                line = line[:new_mid-half] + self.options[item] + line[new_mid+half:]
+            if len(line) < self.width:
+                for _ in range(self.width-len(line)):
+                    line = line[:-1] + " |"
+            elif len(line) > self.width:
+                for _ in range(len(line)-self.width):
+                    line = line[:-2] + "|"
+            self.content[(self.height//3)*2] = line
+
+
+    def set_title(self):
+        if len(self.title) < self.width-2:
+            line = self.content[self.height//3]
+            for character in range(len(self.title)):
+                if not self.centered:
+                    line = line[0:character+1] + self.title[character] + line[character+2:]
+                else:
+                    mid = len(line)//2-1
+                    str_mid = len(self.title)//2+1
+                    mid = mid-str_mid
+                    line = line[0:mid+character+1] + self.title[character] + line[mid+character+2:]
+        self.content[self.height//3] = line
+
+    def draw(self, scr, y: int=0, x: int=0):
+        self.set_title()
+        self.set_options()
+        for line in self.content:
+            scr.addstr(y, x, line)
+            y += 1
+            
+    
+
 class FileEditor:
     def __init__(self, file: str=""):
         self.scr = curses.initscr()
@@ -28,6 +87,7 @@ class FileEditor:
         self.rows, self.columns = 0, 0
         self.file_x, self.file_y = 0, 0
         self.cursor_x, self.cursor_y = 0, 1
+        self.max_x = 0
         self.focus = "File"
 
     def init_color(self) -> None:
@@ -57,7 +117,7 @@ class FileEditor:
     def write_footer() -> None:
         ...
 
-    def move_cursor(self, x: int=None, y: int=None) -> None:
+    def move_cursor(self, y: int=None, x: int=None) -> None:
         """
             Moves cursor to x and y position
             If no positions given, it moves to where it should currently be
@@ -94,29 +154,58 @@ class FileEditor:
                 line += "|"
             self.scr.addstr(i, (self.columns//2//2), line)
 
-    def handle_movement(self, direction : int) -> None:
+    def handle_movement(self, direction : int) -> bool:
         """
             given an ascii int, will process movement
         """
-        match direction:
-            case 258: # Arrow Down
-                if self.file_y+1 < len(self.content): # If there is more content
-                    if self.cursor_y+2 < self.rows: # If your cursor is not at the bottom
-                        self.cursor_y += 1
-                        self.file_y += 1
-                    else: # Bottom of screen
-                        # Current line - rows = 2 indexes lower than bottom of screen
-                        # Current line - rows + 4 is the second line on screen
-                        self.write_content(line=self.file_y-self.rows+4)
-                        self.file_y += 1 # Navigate through file, but not screen
-            case 259: # Arrow up
-                if self.file_y - 1 >= 0: # Has content
-                    if self.cursor_y != 1: # If its in middle of screen
-                        self.cursor_y -= 1
-                        self.file_y -= 1
-                    else: # Top
-                        self.write_content(line=self.file_y-1)
-                        self.file_y -= 1
+        if self.focus == "File":
+            match direction:
+                case 258: # Arrow Down
+                    if self.file_y+1 < len(self.content) and self.can_move_y: # If there is more content
+                        if self.cursor_y+1 < self.rows: # If your cursor is not at the bottom
+                            self.cursor_y += 1
+                            self.file_y += 1
+                        else: # Bottom of screen
+                            self.write_content(line=self.file_y-self.rows+3)
+                            self.file_y += 1 # Navigate through file, but not screen
+                case 259: # Arrow up
+                    if self.file_y - 1 >= 0 and self.can_move_y: # Has content
+                        if self.cursor_y != 1: # If its in middle of screen
+                            self.cursor_y -= 1
+                            self.file_y -= 1
+                        else: # Top
+                            self.file_y -= 1
+                            self.write_content(line=self.file_y)
+                case 260: # Arrow left
+                    if self.file_x - 1 >= 0 and self.can_move_x:
+                        if self.cursor_x != 0:
+                            self.cursor_x -= 1
+                            self.file_x -= 1
+                        else:
+                            if self.file_x - 1 >= 0:
+                                self.file_x -= 1
+                                self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x)
+                        self.max_x -= 1
+                case 261: # Arrow right
+                    if self.file_x < len(self.content[self.file_y]) and self.can_move_x:
+                        if self.cursor_x+3 < self.columns:
+                            self.cursor_x += 1
+                            self.file_x += 1
+                        else:
+                            self.file_x += 1
+                            self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x-self.cursor_x)
+                        self.max_x += 1
+                case _:
+                    return False
+            # Set X value to the last character in the line
+            end = len(self.content[self.file_y])
+            if self.max_x > end:
+                self.file_x = end
+                self.cursor_x = end
+            self.move_cursor()
+            return True # Was an arrow key
+        elif type(self.focus) is Box:
+            self.focus.handle_movement(direction)
 
     def handle_override(self, inp) -> None:
         """
@@ -126,7 +215,10 @@ class FileEditor:
         if inp == Inputs.CTRL_O: # Open File
             self.draw_box()
         if inp == Inputs.CTRL_X: # Close App
-            ...
+            box = Box(10, self.columns//2, title="Would you like to save?", centered=True, options=["YES", "NO"])
+            self.focus = box
+            box.draw(self.scr, self.rows//3, self.columns//2//2)
+            self.move_cursor()
 
     def handle_input(self) -> None:
         self.rows, self.columns = self.scr.getmaxyx()
@@ -141,7 +233,7 @@ class FileEditor:
             Clear everything on the screen, excluding header/footer
         """
         for line in range(1, self.rows-1):
-            self.scr.addstr(0, line, " "*self.columns)
+            self.scr.addstr(line, 0, " "*self.columns)
         self.move_cursor() # Reset cursor
 
     def parse_line(self, line : str) -> list:
@@ -230,7 +322,7 @@ class FileEditor:
             line = content[index:index+self.columns-2]
         except:
             line = content[index:]
-        line += " "*(self.rows-len(line))
+        line += " "*(self.columns-len(line)-1)
         if parse is True:
             parsed = self.parse_line(line)
             for i in range(len(line)):
@@ -249,7 +341,6 @@ class FileEditor:
             Writes all the content in self.content from line to end of screen
             Optional index in case of horizontal scrolling
         """
-        self.clear_screen()
         for y, text in enumerate(self.content[line:]):
             parsed = self.parse_line(text)
             self.parsed_content[y] = parsed # y = file line, not screen line
@@ -265,6 +356,8 @@ class FileEditor:
         self.file_object = open(file)
         self.content = self.file_object.read().split("\n")
         self.original_content = self.content
+        self.clear_screen()
+        self.write_header()
         self.write_content()
 
     def run(self) -> None:
@@ -282,7 +375,6 @@ class FileEditor:
             if self.current_file: # Arg passed at creation
                 self.read_file(self.current_file)
             while self.running:
-                self.write_header()
                 self.handle_input()
         except KeyboardInterrupt: # Control+C
             self.close()
