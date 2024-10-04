@@ -127,12 +127,14 @@ class SelectBox(BaseBox):
         self.parsed_content[(self.height//3)*2] = parsed
         self.content[(self.height//3)*2] = line
 
-    def handle_input(self, inp):
+    def handle_input(self, inp) -> int:
         match inp:
             case 260: # Left
                 self.active_option = self.active_option-1 if self.active_option-1 >= 0 else self.active_option
             case 261: # Right
                 self.active_option = self.active_option+1 if self.active_option+1 < len(self.options) else self.active_option
+            case 10: # Enter
+                return self.active_option
         self._draw_options()
         self.draw()
 
@@ -143,6 +145,14 @@ class SaveBox(SelectBox):
         title = "Would you like to save?"
         options = ["YES", "NO"]
         super().__init__(height, width, title, options)
+
+    def handle_input(self, inp) -> int:
+        if res := super().handle_input(inp) is not None:
+            if res == 0:
+                return True
+            if res == 1:
+                return False
+        return None
 
 
 
@@ -265,11 +275,7 @@ class FileEditor:
         """
         match inp:
             case Inputs.CTRL_O: # Open File
-                # box = Box(10, self.columns//2, title="File Name:", centered=True, options=["InputBox"])
-                # self.focus_object = box
-                # self.focus = "SaveBox"
-                # box.draw(self.scr, self.rows//3, self.columns//2//2)
-                self.move_cursor()
+                ...
             case Inputs.CTRL_X: # Close App
                 box = SaveBox(height=10, width=self.columns//2)
                 self.focus_object = box
@@ -287,14 +293,14 @@ class FileEditor:
         if inp in Inputs.OVERRIDES:
             self.handle_override(inp)
         elif type(self.focus_object) != type(self):
-            self.focus_object.handle_input(inp)
+            res = self.focus_object.handle_input(inp)
+            if res == True:
+                self.save_file()
+                self.close()
+            elif res == False:
+                self.close()
         else:
-            res = self.handle_movement(inp)
-            if self.focus == "SaveBox":
-                if res == "Yes":
-                    self.save_file()
-                elif res == "No":
-                    self.close()
+            self.handle_movement(inp)
 
     def clear_screen(self) -> None:
         """
