@@ -22,7 +22,15 @@ class Box:
         self.title = title
         self.centered = centered
         self.options = options
+        self.options_x = []
+        self.active_option = 0
         self.content = []
+        self.parsed_content = {}
+        self.active_screen = None
+        self.current_x, self.current_y = 0, 0
+        self.instantiate_box()
+    
+    def instantiate_box(self):
         for row in range(self.height):
             if row == 0:
                 self.content.append(" "+"_"*(self.width-2)+" ")
@@ -30,9 +38,34 @@ class Box:
                 self.content.append("|"+"_"*(self.width-2)+"|")
             else:
                 self.content.append("|"+" "*(self.width-2)+"|")
+        self.set_title()
+        self.set_options()
 
-    def handle_movement(self):
-        ...
+    def handle_input(self, inp):
+        if inp == 260 or inp == 261:
+            self.handle_movement(inp)
+        else:
+            if inp == 10:
+                # Return
+                ...
+
+    def handle_movement(self, direction):
+        match direction:
+            case 260: # Left
+                self.active_option -= 1 if self.active_option-1>=0 else 0
+            case 261: # Right
+                self.active_option += 1 if self.active_option+1<len(self.options) else 0
+        self.draw()
+
+    def parse_options(self):
+        line = self.content[(self.height//3)*2]
+        parsed = []
+        for _ in line:
+            parsed.append(curses.color_pair(0))
+        for char in range(len(self.options[self.active_option])):
+            parsed[self.options_x[self.active_option] + char] = curses.color_pair(1)
+        self.parsed_content[(self.height//3)*2] = parsed
+
 
     def set_options(self):
         if self.options:
@@ -42,6 +75,7 @@ class Box:
             for item in range(num):
                 new_mid = mid*(item+1)
                 half = (len(self.options[item])//2)-1
+                self.options_x.append(new_mid-half)
                 line = line[:new_mid-half] + self.options[item] + line[new_mid+half:]
             if len(line) < self.width:
                 for _ in range(self.width-len(line)):
@@ -65,11 +99,28 @@ class Box:
                     line = line[0:mid+character+1] + self.title[character] + line[mid+character+2:]
         self.content[self.height//3] = line
 
-    def draw(self, scr, y: int=0, x: int=0):
-        self.set_title()
-        self.set_options()
-        for line in self.content:
-            scr.addstr(y, x, line)
+    def draw(self, scr=None, y: int=None, x: int=None):
+        if not scr and self.active_screen:
+            scr = self.active_screen
+        if not y:
+            y = 0
+            if self.current_y:
+                y = self.current_y
+        if not x:
+            x = 0
+            if self.current_x:
+                x = self.current_x
+        self.parse_options()
+        self.active_screen = scr
+        self.current_x = x
+        self.current_y = y
+        for i, line in enumerate(self.content):
+            try:
+                colors = self.parsed_content[i]
+                for char in range(len(line)):
+                    scr.addch(y, x+char, line[char], colors[char])
+            except:
+                scr.addstr(y, x, line)
             y += 1
             
     
@@ -158,73 +209,77 @@ class FileEditor:
         """
             given an ascii int, will process movement
         """
-        if self.focus == "File":
-            match direction:
-                case 258: # Arrow Down
-                    if self.file_y+1 < len(self.content) and self.can_move_y: # If there is more content
-                        if self.cursor_y+1 < self.rows: # If your cursor is not at the bottom
-                            self.cursor_y += 1
-                            self.file_y += 1
-                        else: # Bottom of screen
-                            self.write_content(line=self.file_y-self.rows+3)
-                            self.file_y += 1 # Navigate through file, but not screen
-                case 259: # Arrow up
-                    if self.file_y - 1 >= 0 and self.can_move_y: # Has content
-                        if self.cursor_y != 1: # If its in middle of screen
-                            self.cursor_y -= 1
-                            self.file_y -= 1
-                        else: # Top
-                            self.file_y -= 1
-                            self.write_content(line=self.file_y)
-                case 260: # Arrow left
-                    if self.file_x - 1 >= 0 and self.can_move_x:
-                        if self.cursor_x != 0:
-                            self.cursor_x -= 1
+        match direction:
+            case 258: # Arrow Down
+                if self.file_y+1 < len(self.content) and self.can_move_y: # If there is more content
+                    if self.cursor_y+1 < self.rows: # If your cursor is not at the bottom
+                        self.cursor_y += 1
+                        self.file_y += 1
+                    else: # Bottom of screen
+                        self.write_content(line=self.file_y-self.rows+3)
+                        self.file_y += 1 # Navigate through file, but not screen
+            case 259: # Arrow up
+                if self.file_y - 1 >= 0 and self.can_move_y: # Has content
+                    if self.cursor_y != 1: # If its in middle of screen
+                        self.cursor_y -= 1
+                        self.file_y -= 1
+                    else: # Top
+                        self.file_y -= 1
+                        self.write_content(line=self.file_y)
+            case 260: # Arrow left
+                if self.file_x - 1 >= 0 and self.can_move_x:
+                    if self.cursor_x != 0:
+                        self.cursor_x -= 1
+                        self.file_x -= 1
+                    else:
+                        if self.file_x - 1 >= 0:
                             self.file_x -= 1
-                        else:
-                            if self.file_x - 1 >= 0:
-                                self.file_x -= 1
-                                self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x)
-                        self.max_x -= 1
-                case 261: # Arrow right
-                    if self.file_x < len(self.content[self.file_y]) and self.can_move_x:
-                        if self.cursor_x+3 < self.columns:
-                            self.cursor_x += 1
-                            self.file_x += 1
-                        else:
-                            self.file_x += 1
-                            self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x-self.cursor_x)
-                        self.max_x += 1
-                case _:
-                    return False
-            # Set X value to the last character in the line
-            end = len(self.content[self.file_y])
-            if self.max_x > end:
-                self.file_x = end
-                self.cursor_x = end
-            self.move_cursor()
-            return True # Was an arrow key
-        elif type(self.focus) is Box:
-            self.focus.handle_movement(direction)
+                            self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x)
+                    self.max_x -= 1
+            case 261: # Arrow right
+                if self.file_x < len(self.content[self.file_y]) and self.can_move_x:
+                    if self.cursor_x+3 < self.columns:
+                        self.cursor_x += 1
+                        self.file_x += 1
+                    else:
+                        self.file_x += 1
+                        self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x-self.cursor_x)
+                    self.max_x += 1
+            case _:
+                return False
+        # Set X value to the last character in the line
+        end = len(self.content[self.file_y])
+        if self.max_x > end:
+            self.file_x = end
+            self.cursor_x = end
+        self.move_cursor()
+        return True # Was an arrow key
 
     def handle_override(self, inp) -> None:
         """
             Overrides are things that can be executed at any time
             This is for things like saving or quitting
         """
-        if inp == Inputs.CTRL_O: # Open File
-            self.draw_box()
-        if inp == Inputs.CTRL_X: # Close App
-            box = Box(10, self.columns//2, title="Would you like to save?", centered=True, options=["YES", "NO"])
-            self.focus = box
-            box.draw(self.scr, self.rows//3, self.columns//2//2)
-            self.move_cursor()
+        match inp:
+            case Inputs.CTRL_O: # Open File
+                self.draw_box()
+            case Inputs.CTRL_X: # Close App
+                box = Box(10, self.columns//2, title="Would you like to save?", centered=True, options=["YES", "NO"])
+                self.focus = box
+                box.draw(self.scr, self.rows//3, self.columns//2//2)
+                self.move_cursor()
+            case Inputs.CTRL_A:
+                if self.focus != "File":
+                    self.focus = "File"
+                    self.write_content(self.file_y, self.file_x)
 
     def handle_input(self) -> None:
         self.rows, self.columns = self.scr.getmaxyx()
         inp = self.scr.getch()
         if inp in Inputs.OVERRIDES:
             self.handle_override(inp)
+        elif type(self.focus) != str:
+            self.focus.handle_input(inp)
         else:
             self.handle_movement(inp)
 
