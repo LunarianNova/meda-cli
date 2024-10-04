@@ -28,6 +28,7 @@ class Box:
         self.parsed_content = {}
         self.active_screen = None
         self.current_x, self.current_y = 0, 0
+        self.reset_x, self.reset_y = 0, 0
         self.instantiate_box()
     
     def instantiate_box(self):
@@ -110,6 +111,7 @@ class Box:
             x = 0
             if self.current_x:
                 x = self.current_x
+        self.reset_y, self.reset_x = scr.getyx()
         self.parse_options()
         self.active_screen = scr
         self.current_x = x
@@ -122,8 +124,14 @@ class Box:
             except:
                 scr.addstr(y, x, line)
             y += 1
+        self.reset_cursor()
             
-    
+    def reset_cursor(self, scr=None):
+        if scr == None:
+            scr = self.active_screen
+        scr.move(self.reset_y, self.reset_x)
+        curses.setsyx(self.reset_y, self.reset_x)
+        scr.refresh()
 
 class FileEditor:
     def __init__(self, file: str=""):
