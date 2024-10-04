@@ -8,6 +8,8 @@ import traceback
 import sys
 import re
 
+
+
 class Inputs:
     CTRL_I = 9
     CTRL_O = 15
@@ -15,123 +17,109 @@ class Inputs:
     CTRL_X = 24
     OVERRIDES = [CTRL_I, CTRL_O, CTRL_A, CTRL_X]
 
-class Box:
-    def __init__(self, height: int, width: int, title: str, centered: bool=False, writable: bool=False, options: list=None):
+
+
+class BaseBox:
+    def __init__(self, height: int, width: int, title: str):
         self.height = height
         self.width = width
         self.title = title
-        self.centered = centered
-        self.options = options
-        self.options_x = []
-        self.active_option = 0
+        self.y, self.x, = 0, 0
         self.content = []
-        self.parsed_content = {}
         self.active_screen = None
-        self.current_x, self.current_y = 0, 0
-        self.reset_x, self.reset_y = 0, 0
-        self.instantiate_box()
-    
-    def instantiate_box(self) -> None:
-        for row in range(self.height):
-            if row == 0:
-                self.content.append(" "+"_"*(self.width-2)+" ")
-            elif row == self.height-1:
-                self.content.append("|"+"_"*(self.width-2)+"|")
-            else:
-                self.content.append("|"+" "*(self.width-2)+"|")
-        self.set_title()
-        self.set_options()
+        self._instantiate_box()
 
-    def handle_input(self, inp) -> str:
-        if inp == 260 or inp == 261:
-            self.handle_movement(inp)
-            return ""
-        else:
-            if inp == 10:
-                return self.options[self.active_option]
+    def _instantiate_box(self) -> None:
+        """
+            Sets the content to match arguments
+        """
+        self._draw_border()
+        self._draw_title()
 
-    def handle_movement(self, direction) -> None:
-        match direction:
-            case 260: # Left
-                self.active_option -= 1 if self.active_option-1>=0 else 0
-            case 261: # Right
-                self.active_option += 1 if self.active_option+1<len(self.options) else 0
-        self.draw()
+    def _draw_title(self) -> None:
+        """
+            Draws the title about 1/3 down the screen
+        """
+        self.content[self.height//3] = "|" + self.title.center(self.width-2) + "|"
 
-    def parse_options(self) -> None:
-        line = self.content[(self.height//3)*2]
-        parsed = []
-        for _ in line:
-            parsed.append(curses.color_pair(0))
-        for char in range(len(self.options[self.active_option])):
-            parsed[self.options_x[self.active_option] + char] = curses.color_pair(1)
-        self.parsed_content[(self.height//3)*2] = parsed
+    def _draw_border(self) -> None:
+        """
+            Draws the basic box border into self.content
+        """
+        self.content.append(" " + "_"*(self.width-2) + " ")
+        for _ in range(self.height-2):
+            self.content.append("|" + " "*(self.width-2) + "|")
+        self.content.append("|" + "_"*(self.width-2) + "|")
 
-
-    def set_options(self) -> None:
-        if self.options:
-            line = self.content[(self.height//3)*2]
-            num = len(self.options)
-            mid = (self.width - 2) // (num+1)
-            for item in range(num):
-                new_mid = mid*(item+1)
-                half = (len(self.options[item])//2)-1
-                self.options_x.append(new_mid-half)
-                line = line[:new_mid-half] + self.options[item] + line[new_mid+half:]
-            if len(line) < self.width:
-                for _ in range(self.width-len(line)):
-                    line = line[:-1] + " |"
-            elif len(line) > self.width:
-                for _ in range(len(line)-self.width):
-                    line = line[:-2] + "|"
-            self.content[(self.height//3)*2] = line
-
-
-    def set_title(self) -> None:
-        if len(self.title) < self.width-2:
-            line = self.content[self.height//3]
-            for character in range(len(self.title)):
-                if not self.centered:
-                    line = line[0:character+1] + self.title[character] + line[character+2:]
-                else:
-                    mid = len(line)//2-1
-                    str_mid = len(self.title)//2+1
-                    mid = mid-str_mid
-                    line = line[0:mid+character+1] + self.title[character] + line[mid+character+2:]
-        self.content[self.height//3] = line
-
-    def draw(self, scr=None, y: int=None, x: int=None) -> None:
-        if not scr and self.active_screen:
-            scr = self.active_screen
-        if not y:
-            y = 0
-            if self.current_y:
-                y = self.current_y
-        if not x:
-            x = 0
-            if self.current_x:
-                x = self.current_x
-        self.reset_y, self.reset_x = scr.getyx()
-        self.parse_options()
+    def draw(self, y: int=None, x: int=None, scr=None) -> None:
+        """
+            Draws the box on scr at y, x
+        """
+        scr = scr or self.active_screen
+        self.x = x if x is not None else self.x
+        self.y = y if y is not None else self.y
         self.active_screen = scr
-        self.current_x = x
-        self.current_y = y
+        
         for i, line in enumerate(self.content):
-            try:
-                colors = self.parsed_content[i]
-                for char in range(len(line)):
-                    scr.addch(y, x+char, line[char], colors[char])
-            except:
-                scr.addstr(y, x, line)
-            y += 1
-        self.reset_cursor()
+            scr.addstr(y+i, x, line)
             
-    def reset_cursor(self, scr=None) -> None:
-        if scr == None:
-            scr = self.active_screen
-        scr.move(self.reset_y, self.reset_x)
-        curses.setsyx(self.reset_y, self.reset_x)
+    def move_cursor(self, y: int, x: int, scr=None) -> None:
+        """
+            Moves cursor to y, x
+            Useful for stickying cursor
+        """
+        scr = scr or self.active_screen
+        scr.move(y, x)
+        curses.setsyx(y, x)
         scr.refresh()
+
+
+
+class SelectBox(BaseBox):
+    def __init__(self, height: int, width: int, title: str, options: list):
+        super().__init__(height, width, title)
+        self.options = options
+        self.active_option = 0
+
+    def draw(self, y: int=None, x: int=None, scr=None) -> None:
+        """
+            Draws the SelectBox on given screen, or last used screen
+        """
+        scr = scr or self.active_screen
+        self.x = x if x is not None else self.x
+        self.y = y if y is not None else self.y
+        self.active_screen = scr
+
+        self._draw_options()
+        super().draw(scr, y, x)
+
+    def _draw_options(self) -> None:
+        """
+            Sets the line about 2/3 down in the box to the options
+            Highlights active option
+        """
+        spacing = (self.width-2) // (len(self.options)+1)
+        line = "|"
+
+        for i, option in enumerate(self.options):
+            if i == self.active_option:
+                line += curses.color_pair(1) + option + curses.color_pair(0) # You can do coloring like this? I have to rewrite how I parse stuff if true
+            else:
+                line += option
+            line += " "*(spacing-len(option))
+
+        line += "|"
+        self.content[(self.height//3)*2] = line
+
+
+
+class SaveBox(SelectBox):
+    def __init__(self, height: int, width: int):
+        title = "Would you like to save?"
+        options = ["YES", "NO"]
+        super().__init__(height, width, title, options)
+
+
 
 class FileEditor:
     def __init__(self, file: str=""):
@@ -189,31 +177,6 @@ class FileEditor:
         curses.setsyx(y, x)
         self.scr.refresh()
 
-    def draw_box(self, title : str=None, writable : bool=False) -> None:
-        """
-            Draws a box on the screen in the middle
-            Used for user inputs or confirmations
-            TODO: Make it a standalone class?
-        """
-        for i in range(self.rows//3, self.rows//3+11):
-            line = ""
-            if i == self.rows//3:
-                line += " "
-                for _ in range(self.columns//2-2):
-                    line += "_"
-                line += " "
-            elif i == self.rows//3+10:
-                line += "|"
-                for _ in range(self.columns//2-2):
-                    line += "_"
-                line += "|"
-            else:
-                line += "|"
-                for _ in range(self.columns//2-2):
-                    line += " "
-                line += "|"
-            self.scr.addstr(i, (self.columns//2//2), line)
-
     def handle_movement(self, direction : int) -> bool:
         """
             given an ascii int, will process movement
@@ -227,6 +190,7 @@ class FileEditor:
                     else: # Bottom of screen
                         self.write_content(line=self.file_y-self.rows+3)
                         self.file_y += 1 # Navigate through file, but not screen
+
             case 259: # Arrow up
                 if self.file_y - 1 >= 0 and self.can_move_y: # Has content
                     if self.cursor_y != 1: # If its in middle of screen
@@ -235,6 +199,7 @@ class FileEditor:
                     else: # Top
                         self.file_y -= 1
                         self.write_content(line=self.file_y)
+
             case 260: # Arrow left
                 if self.file_x - 1 >= 0 and self.can_move_x:
                     if self.cursor_x != 0:
@@ -245,6 +210,7 @@ class FileEditor:
                             self.file_x -= 1
                             self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x)
                     self.max_x -= 1
+
             case 261: # Arrow right
                 if self.file_x < len(self.content[self.file_y]) and self.can_move_x:
                     if self.cursor_x+3 < self.columns:
@@ -254,13 +220,16 @@ class FileEditor:
                         self.file_x += 1
                         self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x-self.cursor_x)
                     self.max_x += 1
+
             case _:
                 return False
+            
         # Set X value to the last character in the line
         end = len(self.content[self.file_y])
         if self.max_x > end:
             self.file_x = end
             self.cursor_x = end
+
         self.move_cursor()
         return True # Was an arrow key
 
@@ -271,13 +240,16 @@ class FileEditor:
         """
         match inp:
             case Inputs.CTRL_O: # Open File
-                self.draw_box()
+                # box = Box(10, self.columns//2, title="File Name:", centered=True, options=["InputBox"])
+                # self.focus_object = box
+                # self.focus = "SaveBox"
+                # box.draw(self.scr, self.rows//3, self.columns//2//2)
+                self.move_cursor()
             case Inputs.CTRL_X: # Close App
-                box = Box(10, self.columns//2, title="Would you like to save?", centered=True, options=["YES", "NO"])
+                box = SaveBox()
                 self.focus_object = box
                 self.focus = "SaveBox"
-                box.draw(self.scr, self.rows//3, self.columns//2//2)
-                self.move_cursor()
+                box.draw()
             case Inputs.CTRL_A:
                 if self.focus != "File":
                     self.focus_object = self
@@ -404,8 +376,10 @@ class FileEditor:
             parsed = self.parse_line(text)
             self.parsed_content[y] = parsed # y = file line, not screen line
             self.write_line(y+1, text, index, parse=True) # y+1 to account for header
+
             if y+2 >= self.rows:
                 break
+
         self.move_cursor()
 
     def read_file(self, file : str) -> None:
@@ -436,7 +410,7 @@ class FileEditor:
             curses.cbreak()
             self.init_color()
             self.scr.keypad(True) # Clears window
-            if self.current_file: # Arg passed at creation
+            if self.current_file: # Argument passed at creation
                 self.read_file(self.current_file)
             while self.running:
                 self.handle_input()
@@ -457,7 +431,7 @@ class FileEditor:
         self.scr.keypad(False)
         curses.endwin() # Not sure if this is needed
         if self.file_object:
-            self.file_object.close()
+            self.file_object.close() # Don't save
 
 if __name__ == "__main__":
     try:
