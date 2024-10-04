@@ -127,7 +127,7 @@ class SelectBox(BaseBox):
         self.parsed_content[(self.height//3)*2] = parsed
         self.content[(self.height//3)*2] = line
 
-    def handle_input(self, inp) -> int:
+    def handle_input(self, inp: int) -> int:
         """
             Handles changing the active option as well as returning on enter
         """
@@ -143,22 +143,80 @@ class SelectBox(BaseBox):
 
 
 
+class InputBox(BaseBox):
+    def __init__(self, height: int, width: int, title: str):
+        self.text = ""
+        self.input_start = None
+        self.active_position = 0
+        super().__init__(height, width, title)
+
+    def draw(self, scr=None, y: int=None, x: int=None) -> None:
+        scr = scr or self.active_screen
+        cur_y, cur_x = scr.getyx()
+        self.x = x if x is not None else self.x
+        self.y = y if y is not None else self.y
+        self.active_screen = scr
+        
+        self._draw_inputbox()
+        self.input_start = self._get_input_start()
+        super().draw(scr=scr, y=y, x=x)
+        super().move_cursor(self.y+((self.height//3)*2), self.x+self.input_start+self.active_position)
+
+    def _get_input_start(self) -> int:
+        for i, char in enumerate(self.content[(self.height//3)*2]):
+            if char != "|" and char != " ":
+                return i
+        return -1
+
+    def _draw_inputbox(self) -> None:
+        if self.input_start is None: # First Run
+            line = "|" + ("_"*(self.width//2)).center(self.width-2) + "|"
+        elif self.input_start:
+            line = "|"
+            empty_count = (self.width//2)-len(self.text)
+            line += (self.text+"_"*(empty_count)).center(self.width-2) + "|"
+
+        self.content[(self.height//3)*2] = line
+
+    def handle_input(self, inp: int) -> str:
+        match inp:
+            case 260: # Left
+                self.active_position -= 1 if self.active_position-1 >= 0 else 0
+            case 261: # Right
+                self.active_position += 1 if self.active_position+1 <= len(self.text) else 0
+            case 10: # Enter
+                return self.text
+            case 8:
+                self.text = self.text[:self.active_position-1] + self.text[self.active_position:] if len(self.text) > 0 else ""
+                self.active_position -= 1 if self.active_position-1 >= 0 else 0
+            case 127:
+                self.text = self.text[:self.active_position-1] + self.text[self.active_position:] if len(self.text) > 0 else ""
+                self.active_position -= 1 if self.active_position-1 >= 0 else 0
+            case _: # Anything else
+                if inp >= 33 and inp <= 126:
+                    self.text += chr(inp)
+                    self.active_position += 1
+        self._draw_inputbox()
+        self.draw()
+
+
+
 class SaveBox(SelectBox):
     def __init__(self, height: int, width: int):
         title = "Would you like to save?"
         options = ["YES", "NO"]
         super().__init__(height, width, title, options)
 
-    def handle_input(self, inp) -> int:
+    def handle_input(self, inp: int) -> int:
         """
             If the returned option is 0, return True (Save)
             Else return False (Don't save)
         """
-        if res := super().handle_input(inp) is not None:
-            if res == 0:
-                return True
-            if res == 1:
-                return False
+        res = super().handle_input(inp)
+        if res == 0:
+            return True
+        elif res == 1:
+            return False
         return None
 
 
@@ -282,12 +340,17 @@ class FileEditor:
         """
         match inp:
             case Inputs.CTRL_O: # Open File
-                ...
+                box = InputBox(height=10, width=self.columns//2, title="Enter File Name")
+                self.focus_object = box
+                self.focus = "OpenFile"
+                box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
+
             case Inputs.CTRL_X: # Close App
                 box = SaveBox(height=10, width=self.columns//2)
                 self.focus_object = box
                 self.focus = "SaveBox"
                 box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
+
             case Inputs.CTRL_A:
                 if self.focus != "File":
                     self.focus_object = self
@@ -301,13 +364,60 @@ class FileEditor:
             self.handle_override(inp)
         elif type(self.focus_object) != type(self):
             res = self.focus_object.handle_input(inp)
-            if res == True:
-                self.save_file()
-                self.close()
-            elif res == False:
-                self.close()
+            match self.focus:
+                case "SaveBox":
+                    if res == True:
+                        self.save_file()
+                        self.close()
+                    elif res == False:
+                        self.close()
+                case "OpenFile":
+                    if res:
+                        self.read_file(res)
+                        self.focus_object = self
+                        self.focus = "File"
         else:
-            self.handle_movement(inp)
+            move = self.handle_movement(inp)
+            if not move:
+                line = self.content[self.file_y]
+                if inp == 8 or inp == 127: # Backspace
+                    if self.file_x-1 >= 0: # Can erase character
+                        line = line[:self.file_x-1] + line[self.file_x:]
+                        self.file_x -= 1
+                        self.cursor_x -= 1
+                        self.content[self.file_y] = line
+                        self.write_line(self.cursor_y, line)
+                    else: # Erasing start of line
+                        line_end = len(self.content[self.file_y-1])
+                        self.content[self.file_y-1] += self.content[self.file_y]
+                        self.content = self.content[:self.file_y] + self.content[self.file_y+1:]
+                        self.write_content() 
+                        self.file_y -= 1
+                        self.cursor_y -= 1
+                        self.file_x = line_end
+                        self.cursor_x = line_end
+
+                elif inp == 10:
+                    line = line[0:self.file_x] + "\n" + line[self.file_x:]
+                    self.content = self.content[:self.file_y] + line.split("\n") + self.content[self.file_y+1:]
+                    self.write_content()
+                    self.file_y += 1
+                    self.cursor_y += 1
+                    self.file_x = 0
+                    self.cursor_x = 0
+
+                elif inp >= 33 and inp <= 126:
+                    try:
+                        line = line[0:self.file_x] + chr(inp) + line[self.file_x:]
+                    except IndexError:
+                        line += chr(inp)
+                    self.file_x += 1
+                    self.cursor_x += 1
+                    self.content[self.file_y] = line
+                    self.write_line(self.cursor_y, line)
+                
+                self.move_cursor()
+                self.max_x = self.file_x
 
     def clear_screen(self) -> None:
         """
@@ -315,6 +425,7 @@ class FileEditor:
         """
         for line in range(1, self.rows-1):
             self.scr.addstr(line, 0, " "*self.columns)
+        self.scr.addstr(self.rows-1, 0, " "*(self.columns-1))
         self.move_cursor() # Reset cursor
 
     def parse_line(self, line: str) -> list:
@@ -424,7 +535,12 @@ class FileEditor:
         """
             Sets attributes to equal a new file, as indicated by a passed string
         """
+        self.cursor_y = 1
+        self.cursor_x, self.file_x, self.file_y = 0, 0, 0
+        if self.file_object:
+            self.file_object.close()
         self.file_object = open(file)
+        self.current_file = file
         self.content = self.file_object.read().split("\n")
         self.original_content = self.content
         for line in range(len(self.content)):
