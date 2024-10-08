@@ -235,6 +235,7 @@ class FileEditor:
         self.file_x, self.file_y = 0, 0
         self.cursor_x, self.cursor_y = 0, 1
         self.max_x = 0
+        self.scrolled_x = 0
         self.focus_object = self
         self.focus = "File"
 
@@ -281,54 +282,109 @@ class FileEditor:
         """
             given an ascii int, will process movement
         """
+
+        def adjust_x(old_line: int, new_line: int):
+            old_content = self.content[old_line]
+            new_content = self.content[new_line]
+            new_start = ""
+
+            if self.scrolled_x:
+                self.write_line(self.cursor_y+(old_line-new_line), old_content)
+
+            if len(new_content) <= self.max_x:
+                # If the new line is shorter than current x position
+                self.file_x = len(new_content)
+                if len(new_content) < self.columns-2:
+                    # If the new line is smaller than the screen
+                    self.cursor_x = self.file_x
+                else:
+                    # If the new line is larger than the screen
+                    self.scrolled_x = ((self.file_x-(self.columns-2)) // (self.columns-6)) + 1
+                    self.scrolled_x = max(0, self.scrolled_x)
+                    new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
+                    self.cursor_x = len(new_content) - new_start - 1
+                    self.write_line(self.cursor_y, new_content, index=new_start)
+            
+            else:
+                if self.scrolled_x:
+                    # If the new line is larger than the max position
+                    self.file_x = self.max_x
+                    self.scrolled_x = ((self.max_x-(self.columns-2)) // (self.columns-6)) + 1
+                    self.scrolled_x = max(0, self.scrolled_x)
+                    # 82, 165, 248 ((self.columns-7)+((self.columns-6)*(self.scrolled_x-1))) 
+                    # self.columns = 89
+                    new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
+                    self.cursor_x = self.max_x-new_start-1
+                    self.write_line(self.cursor_y, new_content, index=new_start)
+                else:
+                    self.file_x = self.max_x
+                    self.cursor_x = self.file_x
+
+
         match direction:
             case 258: # Arrow Down
-                if self.file_y+1 < len(self.content) and self.can_move_y: # If there is more content
-                    if self.cursor_y+1 < self.rows: # If your cursor is not at the bottom
+                if self.file_y + 1 < len(self.content):
+                    # If there is a line under cursor
+                    old_line = self.file_y
+                    self.file_y += 1
+                    new_line = self.file_y
+                    if self.cursor_y + 1 < self.rows:
+                        # If the cursor is not at the bottom of the screen
                         self.cursor_y += 1
-                        self.file_y += 1
-                    else: # Bottom of screen
-                        self.write_content(line=self.file_y-self.rows+3)
-                        self.file_y += 1 # Navigate through file, but not screen
+                    else:
+                        # If the cursor is at the bottom
+                        self.write_content(self.file_y-self.rows+2)
+
+                    adjust_x(old_line, new_line)
 
             case 259: # Arrow up
-                if self.file_y - 1 >= 0 and self.can_move_y: # Has content
-                    if self.cursor_y != 1: # If its in middle of screen
+                if self.file_y - 1 >= 0:
+                    # If there is a line before the current line
+                    old_line = self.file_y
+                    self.file_y -= 1
+                    new_line = self.file_y
+                    if self.cursor_y - 1 > 0:
+                        # If the cursor is not at the start of the screen
                         self.cursor_y -= 1
-                        self.file_y -= 1
-                    else: # Top
-                        self.file_y -= 1
-                        self.write_content(line=self.file_y)
+                    else:
+                        # If the cursor is at the top
+                        self.write_content(self.file_y)
+
+                    adjust_x(old_line, new_line)
 
             case 260: # Arrow left
-                if self.file_x - 1 >= 0 and self.can_move_x:
-                    if self.cursor_x != 0:
+                if self.file_x - 1 >= 0:
+                    # Cursor is not at the start of file
+                    self.file_x -= 1
+
+                    if self.cursor_x - 1 >= 0:
+                        # Cursor is not at start of screen
                         self.cursor_x -= 1
-                        self.file_x -= 1
-                    else:
-                        if self.file_x - 1 >= 0:
-                            self.file_x -= 1
-                            self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x)
-                    self.max_x -= 1
+
+                        if self.scrolled_x != 0 and self.cursor_x == 3:
+                            # Screen is scrolled
+                            new_start = max(0, self.file_x-self.columns+2) # 1->0 will be negative
+                            self.scrolled_x -= 1
+                            self.write_line(y=self.cursor_y, content=self.content[self.file_y], index=new_start)
+                            self.cursor_x = self.columns-3
+
+                    self.max_x = self.file_x
 
             case 261: # Arrow right
-                if self.file_x < len(self.content[self.file_y]) and self.can_move_x:
-                    if self.cursor_x+3 < self.columns:
+                if self.file_x + 1 <= len(self.content[self.file_y]):
+                    self.file_x += 1
+                    if self.cursor_x + 1 < self.columns-2:
                         self.cursor_x += 1
-                        self.file_x += 1
                     else:
-                        self.file_x += 1
-                        self.write_content(line=self.file_y-self.cursor_y+1, index=self.file_x-self.cursor_x)
-                    self.max_x += 1
+                        self.cursor_x = 4
+                        self.write_line(y=self.cursor_y, content=self.content[self.file_y], index=self.file_x-5)
+                        self.scrolled_x += 1
+
+                    self.max_x = self.file_x
 
             case _:
                 return False
             
-        # Set X value to the last character in the line
-        end = len(self.content[self.file_y])
-        if self.max_x > end:
-            self.file_x = end
-            self.cursor_x = end
 
         self.move_cursor()
         return True # Was an arrow key
@@ -501,20 +557,30 @@ class FileEditor:
             Takes an optional parse argument
             True to parse, False to not, or a parsed dict itself
         """
-        line = content[index:index+self.columns-2] if index < len(content) else content[index:]
-        line += " "*(self.columns-len(line)-1) # Erase any text already there
-    
+        line = content[index:index+self.columns]
+        line += " "*(self.columns-len(line)+1) # Erase any text already there
+
+        parsed = []
+
+        if index > 0:
+            line = line[1:]
+            
         if parse is True:
             parsed = self.parse_line(line) if not self.check_parsed_cache(content) else self.check_parsed_cache(content)
         elif parse:
             parsed = parse
         else:
-            self.scr.addstr(y, 0, line) # TODO: Test if this is faster than adding each character
-            return
-
-        for i in range(len(line)):
+            parsed = [curses.color_pair(0) for i in range(self.columns-2)]
+        
+        for i in range(min(self.columns-1, len(line)-1)):
             color = parsed[i] if i < len(parsed) else curses.color_pair(0)
             self.scr.addch(y, i, line[i], color)
+
+        if index > 0:
+            self.scr.addch(y, 0, "<", curses.color_pair(1))
+        if len(content[index:]) >= self.columns-2:
+            self.scr.addch(y, self.columns-2, ">", curses.color_pair(1))
+
 
     def write_content(self, line: int=0, index: int=0) -> None:
         """
