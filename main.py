@@ -551,7 +551,7 @@ class FileEditor:
         except ValueError: # Failed .index
             return None
 
-    def write_line(self, y: int, content: str, index: int = 0, parse: bool | dict = False) -> None:
+    def write_line(self, y: int, content: str, index: int = 0, parse: bool = True) -> None:
         """
             Writes a line of content, from index on, at the line y
             Takes an optional parse argument
@@ -561,17 +561,17 @@ class FileEditor:
         line += " "*(self.columns-len(line)+1) # Erase any text already there
 
         parsed = []
-
-        if index > 0:
-            line = line[1:]
             
         if parse is True:
             parsed = self.parse_line(line) if not self.check_parsed_cache(content) else self.check_parsed_cache(content)
-        elif parse:
-            parsed = parse
+            parsed = parsed[index:index+self.columns]
         else:
             parsed = [curses.color_pair(0) for i in range(self.columns-2)]
         
+        if index > 0: # TODO: Fix the weird edge case (should be as easy as removing the 1s in correct_x)
+            line = line[1:]
+            parsed = parsed[1:]
+
         for i in range(min(self.columns-1, len(line)-1)):
             color = parsed[i] if i < len(parsed) else curses.color_pair(0)
             self.scr.addch(y, i, line[i], color)
@@ -590,7 +590,7 @@ class FileEditor:
         for y, text in enumerate(self.content[line:]):
             parsed = self.parse_line(text)
             self.parsed_content[y] = parsed # y = file line, not screen line
-            self.write_line(y+1, text, index, parse=True) # y+1 to account for header
+            self.write_line(y+1, text, index) # y+1 to account for header
 
             if y+2 >= self.rows:
                 break
@@ -605,9 +605,12 @@ class FileEditor:
         self.cursor_x, self.file_x, self.file_y = 0, 0, 0
         if self.file_object:
             self.file_object.close()
-        self.file_object = open(file)
+        try:
+            self.file_object = open(file)
+            self.content = self.file_object.read().split("\n")
+        except FileNotFoundError:
+            self.content = [""]
         self.current_file = file
-        self.content = self.file_object.read().split("\n")
         self.original_content = self.content
         for line in range(len(self.content)):
             self.parsed_content[line] = self.parse_line(self.content[line])
