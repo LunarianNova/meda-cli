@@ -213,6 +213,10 @@ class SaveBox(SelectBox):
             Else return False (Don't save)
         """
         res = super().handle_input(inp)
+        if inp == 121:
+            return True
+        elif inp == 110:
+            return False
         if res == 0:
             return True
         elif res == 1:
@@ -278,48 +282,47 @@ class FileEditor:
         curses.setsyx(y, x)
         self.scr.refresh()
 
+    def adjust_x(self, old_line: int, new_line: int):
+        old_content = self.content[old_line]
+        new_content = self.content[new_line]
+        new_start = ""
+
+        if self.scrolled_x:
+            self.write_line(self.cursor_y+(old_line-new_line), old_content)
+
+        if len(new_content) <= self.max_x:
+            # If the new line is shorter than current x position
+            self.file_x = len(new_content)
+            if len(new_content) < self.columns-2:
+                # If the new line is smaller than the screen
+                self.cursor_x = self.file_x
+            else:
+                # If the new line is larger than the screen
+                self.scrolled_x = ((self.file_x-(self.columns-2)) // (self.columns-6)) + 1
+                self.scrolled_x = max(0, self.scrolled_x)
+                new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
+                self.cursor_x = len(new_content) - new_start - 1
+                self.write_line(self.cursor_y, new_content, index=new_start)
+        
+        else:
+            if self.scrolled_x:
+                # If the new line is larger than the max position
+                self.file_x = self.max_x
+                self.scrolled_x = ((self.max_x-(self.columns-2)) // (self.columns-6)) + 1
+                self.scrolled_x = max(0, self.scrolled_x)
+                # 82, 165, 248 ((self.columns-7)+((self.columns-6)*(self.scrolled_x-1))) 
+                # self.columns = 89
+                new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
+                self.cursor_x = self.max_x-new_start-1
+                self.write_line(self.cursor_y, new_content, index=new_start)
+            else:
+                self.file_x = self.max_x
+                self.cursor_x = self.file_x
+
     def handle_movement(self, direction : int) -> bool:
         """
             given an ascii int, will process movement
         """
-
-        def adjust_x(old_line: int, new_line: int):
-            old_content = self.content[old_line]
-            new_content = self.content[new_line]
-            new_start = ""
-
-            if self.scrolled_x:
-                self.write_line(self.cursor_y+(old_line-new_line), old_content)
-
-            if len(new_content) <= self.max_x:
-                # If the new line is shorter than current x position
-                self.file_x = len(new_content)
-                if len(new_content) < self.columns-2:
-                    # If the new line is smaller than the screen
-                    self.cursor_x = self.file_x
-                else:
-                    # If the new line is larger than the screen
-                    self.scrolled_x = ((self.file_x-(self.columns-2)) // (self.columns-6)) + 1
-                    self.scrolled_x = max(0, self.scrolled_x)
-                    new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
-                    self.cursor_x = len(new_content) - new_start - 1
-                    self.write_line(self.cursor_y, new_content, index=new_start)
-            
-            else:
-                if self.scrolled_x:
-                    # If the new line is larger than the max position
-                    self.file_x = self.max_x
-                    self.scrolled_x = ((self.max_x-(self.columns-2)) // (self.columns-6)) + 1
-                    self.scrolled_x = max(0, self.scrolled_x)
-                    # 82, 165, 248 ((self.columns-7)+((self.columns-6)*(self.scrolled_x-1))) 
-                    # self.columns = 89
-                    new_start = (self.columns-7)+((self.columns-6)*(self.scrolled_x-1)) if self.scrolled_x != 0 else 0
-                    self.cursor_x = self.max_x-new_start-1
-                    self.write_line(self.cursor_y, new_content, index=new_start)
-                else:
-                    self.file_x = self.max_x
-                    self.cursor_x = self.file_x
-
 
         match direction:
             case 258: # Arrow Down
@@ -335,7 +338,7 @@ class FileEditor:
                         # If the cursor is at the bottom
                         self.write_content(self.file_y-self.rows+2)
 
-                    adjust_x(old_line, new_line)
+                    self.adjust_x(old_line, new_line)
 
             case 259: # Arrow up
                 if self.file_y - 1 >= 0:
@@ -350,7 +353,7 @@ class FileEditor:
                         # If the cursor is at the top
                         self.write_content(self.file_y)
 
-                    adjust_x(old_line, new_line)
+                    self.adjust_x(old_line, new_line)
 
             case 260: # Arrow left
                 if self.file_x - 1 >= 0:
@@ -439,10 +442,11 @@ class FileEditor:
                 if inp == 8 or inp == 127: # Backspace
                     if self.file_x-1 >= 0: # Can erase character
                         line = line[:self.file_x-1] + line[self.file_x:]
-                        self.file_x -= 1
-                        self.cursor_x -= 1
                         self.content[self.file_y] = line
                         self.write_line(self.cursor_y, line)
+                        self.handle_movement(260)
+                        if self.file_x > self.columns - 2:
+                            self.adjust_x(self.file_y, self.file_y)
                     else: # Erasing start of line
                         line_end = len(self.content[self.file_y-1])
                         self.content[self.file_y-1] += self.content[self.file_y]
@@ -452,6 +456,7 @@ class FileEditor:
                         self.cursor_y -= 1
                         self.file_x = line_end
                         self.cursor_x = line_end
+                        self.adjust_x(self.file_y+1, self.file_y)
 
                 elif inp == 10:
                     line = line[0:self.file_x] + "\n" + line[self.file_x:]
@@ -461,19 +466,22 @@ class FileEditor:
                     self.cursor_y += 1
                     self.file_x = 0
                     self.cursor_x = 0
+                    self.adjust_x(self.file_y-1, self.file_y)
 
-                elif inp >= 33 and inp <= 126:
+                elif (inp >= 33 and inp <= 126) or inp == 32:
                     try:
                         line = line[0:self.file_x] + chr(inp) + line[self.file_x:]
                     except IndexError:
                         line += chr(inp)
-                    self.file_x += 1
-                    self.cursor_x += 1
                     self.content[self.file_y] = line
                     self.write_line(self.cursor_y, line)
+                    self.handle_movement(261)
+                    if self.file_x > self.columns - 2:
+                        self.adjust_x(self.file_y, self.file_y)
                 
                 self.move_cursor()
                 self.max_x = self.file_x
+                
 
     def clear_screen(self) -> None:
         """
