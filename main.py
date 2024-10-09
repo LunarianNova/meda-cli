@@ -11,11 +11,10 @@ import re
 
 
 class Inputs:
-    CTRL_I = 9
     CTRL_O = 15
     CTRL_A = 1
     CTRL_X = 24
-    OVERRIDES = [CTRL_I, CTRL_O, CTRL_A, CTRL_X]
+    OVERRIDES = [CTRL_O, CTRL_A, CTRL_X]
 
 
 
@@ -458,6 +457,12 @@ class FileEditor:
                         self.cursor_x = line_end
                         self.adjust_x(self.file_y+1, self.file_y)
 
+                elif inp == 9:
+                    self.content[self.file_y] = (" "*4) + self.content[self.file_y]
+                    for _ in range(4): self.handle_movement(261)
+                    self.write_line(self.cursor_y, self.content[self.file_y])
+                    self.adjust_x(self.file_y, self.file_y)
+
                 elif inp == 10:
                     line = line[0:self.file_x] + "\n" + line[self.file_x:]
                     self.content = self.content[:self.file_y] + line.split("\n") + self.content[self.file_y+1:]
@@ -468,7 +473,7 @@ class FileEditor:
                     self.cursor_x = 0
                     self.adjust_x(self.file_y-1, self.file_y)
 
-                elif (inp >= 33 and inp <= 126) or inp == 32:
+                elif (inp >= 32 and inp <= 126):
                     try:
                         line = line[0:self.file_x] + chr(inp) + line[self.file_x:]
                     except IndexError:
@@ -478,7 +483,14 @@ class FileEditor:
                     self.handle_movement(261)
                     if self.file_x > self.columns - 2:
                         self.adjust_x(self.file_y, self.file_y)
-                
+
+                elif inp == 353:
+                    if self.content[self.file_y].startswith(" "*4):
+                        self.content[self.file_y] = self.content[self.file_y][4:]
+                        for _ in range(4): self.handle_movement(260)
+                        self.write_line(self.cursor_y, self.content[self.file_y])
+                        self.adjust_x(self.file_y, self.file_y)
+
                 self.move_cursor()
                 self.max_x = self.file_x
                 
