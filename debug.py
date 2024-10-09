@@ -1,24 +1,26 @@
 import curses
+import traceback
 
 class Window:
     def __init__(self):
         self.scr = curses.initscr()
 
-    def run(self)
+    def run(self):
         try:
+            self.running = True
             curses.noecho()
             curses.cbreak()
-            self.init_color()
             self.scr.keypad(True) # Clears window
             while self.running:
-                self.scr.addstr(0, 0, self.scr.getch())
+                self.scr.addstr(0, 0, str(self.scr.getch()) + "   ")
         except KeyboardInterrupt: # Control+C
             self.close()
         except Exception: # Genuine Error
             self.close() # Gracefully close
             print(traceback.format_exc()) # Print the stack trace
 
-    def close(self)
+    def close(self):
+        self.running = False
         curses.echo()
         curses.nocbreak()
         self.scr.keypad(False)
