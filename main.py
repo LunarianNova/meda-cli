@@ -425,12 +425,13 @@ class FileEditor:
                 box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
 
             case Inputs.CTRL_X: # Close App
-                box = SaveBox(height=10, width=self.columns//2)
-                self.focus_object = box
-                self.focus = "SaveBox"
-                box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
-                while not self.wait_for_response():
-                    pass
+                if self.content != self.original_content:
+                    box = SaveBox(height=10, width=self.columns//2)
+                    self.focus_object = box
+                    self.focus = "SaveBox"
+                    box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
+                    while not self.wait_for_response():
+                        pass
                 self.close()
 
             case Inputs.CTRL_A:
