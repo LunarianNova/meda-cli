@@ -398,6 +398,13 @@ class FileEditor:
         """
         match inp:
             case Inputs.CTRL_O: # Open File
+                if self.content != self.original_content:
+                    box = SaveBox(height=10, width=self.columns//2)
+                    self.focus_object = box
+                    self.focus = "SaveBox"
+                    box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
+                    while not self.wait_for_response():
+                        pass
                 box = InputBox(height=10, width=self.columns//2, title="Enter File Name")
                 self.focus_object = box
                 self.focus = "OpenFile"
@@ -408,6 +415,9 @@ class FileEditor:
                 self.focus_object = box
                 self.focus = "SaveBox"
                 box.draw(scr=self.scr, y=self.rows//3, x=self.columns//2//2)
+                while not self.wait_for_response():
+                    pass
+                self.close()
 
             case Inputs.CTRL_A:
                 if self.focus != "File":
@@ -415,6 +425,17 @@ class FileEditor:
                     self.focus = "File"
                     self.write_content(self.file_y, self.file_x)
 
+    def wait_for_response(self) -> None:
+        """
+            Call this in a while loop to suspend until
+            Current overlay is closed
+        """
+        temp = self.focus_object
+        self.handle_input()
+        if temp != self.focus_object:
+            return True
+        return False
+    
     def handle_input(self) -> None:
         self.rows, self.columns = self.scr.getmaxyx()
         inp = self.scr.getch()
@@ -426,9 +447,11 @@ class FileEditor:
                 case "SaveBox":
                     if res == True:
                         self.save_file()
-                        self.close()
+                        self.focus_object = self
+                        self.focus = "File"
                     elif res == False:
-                        self.close()
+                        self.focus_object = self
+                        self.focus = "File"
                 case "OpenFile":
                     if res:
                         self.read_file(res)
@@ -478,7 +501,7 @@ class FileEditor:
                         line = line[0:self.file_x] + chr(inp) + line[self.file_x:]
                     except IndexError:
                         line += chr(inp)
-                    self.content[self.file_y] = line
+                    self.content[self.file_y] = line # This somehow changes self.original_content
                     self.write_line(self.cursor_y, line)
                     self.handle_movement(261)
                     if self.file_x > self.columns - 2:
@@ -492,6 +515,7 @@ class FileEditor:
                         self.adjust_x(self.file_y, self.file_y)
 
                 self.move_cursor()
+                self.write_header()
                 self.max_x = self.file_x
                 
 
@@ -628,10 +652,11 @@ class FileEditor:
         try:
             self.file_object = open(file)
             self.content = self.file_object.read().split("\n")
+            self.original_content = [x for x in self.content]
         except FileNotFoundError:
             self.content = [""]
+            self.original_content = [""]
         self.current_file = file
-        self.original_content = self.content
         for line in range(len(self.content)):
             self.parsed_content[line] = self.parse_line(self.content[line])
         self.clear_screen()
@@ -641,7 +666,9 @@ class FileEditor:
     def save_file(self) -> None:
         self.file_object.close()
         with open(self.current_file, "w") as f:
-            f.write("\n".join(self.content))            
+            f.write("\n".join(self.content))   
+        self.original_content = [x for x in self.content]
+        self.file_object = open(self.current_file)
 
     def run(self) -> None:
         """
