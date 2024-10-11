@@ -147,6 +147,7 @@ class InputBox(BaseBox):
         self.text = ""
         self.input_start = None
         self.active_position = 0
+        self.cursor_position = 0
         super().__init__(height, width, title)
 
     def draw(self, scr=None, y: int=None, x: int=None) -> None:
@@ -159,7 +160,7 @@ class InputBox(BaseBox):
         self._draw_inputbox()
         self.input_start = self._get_input_start()
         super().draw(scr=scr, y=y, x=x)
-        super().move_cursor(self.y+((self.height//3)*2), self.x+self.input_start+self.active_position)
+        super().move_cursor(self.y+((self.height//3)*2), self.x+self.input_start+self.cursor_position)
 
     def _get_input_start(self) -> int:
         for i, char in enumerate(self.content[(self.height//3)*2]):
@@ -173,7 +174,10 @@ class InputBox(BaseBox):
         elif self.input_start:
             line = "|"
             empty_count = (self.width//2)-len(self.text)
-            line += (self.text+"_"*(empty_count)).center(self.width-2) + "|"
+            if len(self.text) <= self.width//2:
+                line += (self.text+"_"*(empty_count)).center(self.width-2) + "|"
+            else:
+                line += self.text[max(0, self.active_position-(self.width//2)):max(self.width//2,self.active_position)].center(self.width-2) + "|"
 
         self.content[(self.height//3)*2] = line
 
@@ -181,20 +185,30 @@ class InputBox(BaseBox):
         match inp:
             case 260: # Left
                 self.active_position -= 1 if self.active_position-1 >= 0 else 0
+                if self.cursor_position == self.active_position+1:
+                    self.cursor_position -= 1 if self.cursor_position-1 >= 0 else 0
             case 261: # Right
                 self.active_position += 1 if self.active_position+1 <= len(self.text) else 0
+                self.cursor_position += 1 if self.cursor_position+1 <= len(self.text) else 0
             case 10: # Enter
                 return self.text
             case 8:
                 self.text = self.text[:self.active_position-1] + self.text[self.active_position:] if len(self.text) > 0 else ""
                 self.active_position -= 1 if self.active_position-1 >= 0 else 0
+                if self.cursor_position == self.active_position+1:
+                    self.cursor_position -= 1 if self.cursor_position-1 >= 0 else 0
             case 127:
                 self.text = self.text[:self.active_position-1] + self.text[self.active_position:] if len(self.text) > 0 else ""
                 self.active_position -= 1 if self.active_position-1 >= 0 else 0
+                if self.cursor_position == self.active_position+1:
+                    self.cursor_position -= 1 if self.cursor_position-1 >= 0 else 0
             case _: # Anything else
                 if inp >= 33 and inp <= 126:
-                    self.text += chr(inp)
+                    self.text = self.text[:self.active_position] + chr(inp) + self.text[self.active_position:]
                     self.active_position += 1
+                    self.cursor_position += 1
+        if self.cursor_position > self.width//2:
+            self.cursor_position = self.width//2
         self._draw_inputbox()
         self.draw()
 
